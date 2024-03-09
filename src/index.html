@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BMP Hider</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <div id="header">
+      <h1>Text Hider</h1> 
+    </div>
+    <div id="main">
+      <h2>Chosen File: <span id="fileNameSpan"></span></h2>
+      <div id="options">  
+        <div class="option">
+          <h2>Encode</h2>
+          <input type="radio" name="option" class="radio">
+        </div>
+        <div class="option">
+          <h2>Decode</h2>
+          <input type="radio" name="option" class="radio">
+        </div>
+      </div>
+      <div id="encodeDiv">
+        <h2>Message:</h2>
+        <input type="text" name="messageToEncode" id="messageToEncode">
+      </div>
+      <div id="file-container">
+        <span id="choose-file">Choose File</span> 
+      </div>
+      <button type="button" id="processButton">Process</button>
+      <div id="infoDiv">
+        <h2 id="info"></h2> 
+      </div>
+    </div>
+  </body>
+
+</html>
