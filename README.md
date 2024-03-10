@@ -11,8 +11,8 @@
   
  ## Features
   
- * Encoding your message into some file.
- * Decode it using by checking decode option.
+ * Encode your message into some file.
+ * Decode it by checking decode option.
 
 ## Download Binaries (Linux, Windows, MacOS)
 
