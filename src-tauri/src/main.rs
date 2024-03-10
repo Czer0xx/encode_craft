@@ -6,11 +6,6 @@ use std::fs::File;
 use std::io::{prelude::*, ErrorKind, SeekFrom};
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 fn encode(path: String, message: String) -> String {
     const STARTING_POINT: [u8; 3] = [0xFF, 0x11, 0xFF];
 
@@ -83,7 +78,7 @@ fn decode(path: String) -> String {
             Ok(_) => {}
             Err(e) => {
                 if e.kind() == ErrorKind::UnexpectedEof {
-                    return ("Nie znaleziono zakodowanej wiadomosci!").to_string();
+                    return ("Couldn't find any message").to_string();
                 }
             }
         };
@@ -110,7 +105,7 @@ fn decode(path: String) -> String {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet, encode, decode])
+        .invoke_handler(tauri::generate_handler![encode, decode])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
