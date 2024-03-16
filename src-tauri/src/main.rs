@@ -2,104 +2,166 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-use std::fs::File;
-use std::io::{prelude::*, ErrorKind, SeekFrom};
 
-#[tauri::command]
-fn encode(path: String, message: String) -> String {
-    const STARTING_POINT: [u8; 3] = [0xFF, 0x11, 0xFF];
+//Imports
+use rand::{thread_rng, Rng};
+use std::fs::{metadata, File};
+use std::io::{Read, Seek, SeekFrom, Write};
 
-    let file_name = path;
-    let message_bytes = message.as_bytes();
-
-    let mut file = File::options()
-        .read(true)
-        .write(true)
-        .open(file_name.trim())
-        .unwrap();
-
-    let mut zero_byte_adress: u64 = 0;
-    loop {
-        let mut buffer: [u8; 1] = [0];
-        match file.read_exact(&mut buffer) {
-            Ok(_) => {}
-            Err(_) => break,
-        };
-        if buffer[0] == 0 {
-            match file.stream_position() {
-                Ok(position) => {
-                    zero_byte_adress = position - 1;
-                    if zero_byte_adress >= 0x1C5 {
-                        break;
-                    }
-                }
-                Err(e) => panic!("{}", e),
-            };
-        }
+// Function to perform wrapping addition of two u8 values
+fn wrapping_add(a: u8, b: u8) -> u8 {
+    let sum = a as u16 + b as u16; // add the two u8 values as u16
+    if sum > u8::max as u16 {
+        // check if the sum exceeds the maximum value for u8
+        (sum - u8::max as u16 - 1) as u8 // perform wrapping if sum exceeds u8 maximum value
+    } else {
+        sum as u8 // return the sum as u8 if it doesn't exceed maximum value
     }
+}
 
-    file.seek(SeekFrom::Start(zero_byte_adress)).unwrap();
-    match file.write_all(&STARTING_POINT) {
-        Ok(_) => {
-            let hex_string = format!("{:x}", zero_byte_adress);
-            println!(
-                "Succesfully wrote STARTING_POINT starting from adress: 0x{}",
-                hex_string
-            );
-        }
-        Err(e) => panic!("{:?}", e),
+/// Performs wrapping subtraction for u8 values
+fn wrapping_subtract(a: u8, b: u8) -> u8 {
+    if a >= b {
+        a - b // If a is greater than or equal to b, perform normal subtraction
+    } else {
+        // If a is less than b, perform wrapping subtraction
+        // Since a < b, a - b would underflow, so add u8::max to a and add 1 to compensate
+        (u16::from(a) + u16::from(u8::max_value()) + 1 - u16::from(b)) as u8
     }
-    file.write_all(message_bytes).unwrap();
-    match file.write_all(&STARTING_POINT) {
-        Ok(_) => {
-            let hex_string = format!("{:x}", file.stream_position().unwrap());
-            println!(
-                "Succesfully wrote ENDING_POINT ending on adress: 0x{}",
-                hex_string
-            );
-        }
-        Err(e) => panic!("{:?}", e),
-    }
-    let starting_point_hex: String = format!("{:x}", zero_byte_adress);
-    let ending_point_hex: String = format!("{:x}", file.stream_position().unwrap());
-    let result_string = format!("{},{}", starting_point_hex, ending_point_hex);
-    result_string
+}
+
+// Function to get file size
+fn file_size(path: &str) -> Result<u64, std::io::Error> {
+    let metadata = metadata(path)?; // Get metadata of the file
+    Ok(metadata.len()) // Return the size of the file
 }
 
 #[tauri::command]
-fn decode(path: String) -> String {
-    let mut file = File::open(path).unwrap();
+fn encode(path: &str, message: &str) -> String {
+    const OFFSET_VALUE_ADDRESS: u64 = 0x100; // Define address for offset value in the file
+    const LETTER_SHIFT: u8 = 128; // Define shift value for encoding letters
+    const MAX_FILE_SIZE: u64 = 1000; // Define maximum file size
 
-    let mut message_bytes: Vec<u8> = Vec::new();
+    let file_size = match file_size(&path) {
+        Ok(size) => size,
+        Err(err) => return format!("Error: {:?}", err), // Return error as string
+    };
 
-    loop {
-        let mut buffer: [u8; 1] = [0];
-        match file.read_exact(&mut buffer) {
-            Ok(_) => {}
-            Err(e) => {
-                if e.kind() == ErrorKind::UnexpectedEof {
-                    return ("Couldn't find any message").to_string();
-                }
-            }
-        };
-        if buffer[0] == 0xFF {
-            file.read_exact(&mut buffer).unwrap();
-            if buffer[0] == 0x11 {
-                file.read_exact(&mut buffer).unwrap();
-                if buffer[0] == 0xFF {
-                    let mut message_buffer: [u8; 1] = [0];
-                    while message_buffer[0] != 0xFF {
-                        file.read_exact(&mut message_buffer).unwrap();
-                        if message_buffer[0] != 0xFF {
-                            message_bytes.push(message_buffer[0]);
-                        }
-                    }
-                    break;
-                }
-            }
-        };
+    if file_size < MAX_FILE_SIZE {
+        // Check if the file size is less than the maximum allowed
+        return format!("Error: File has to be over 10kB"); // Return an error if the file size is too small
     }
-    let message_string = String::from_utf8_lossy(&message_bytes).into_owned();
+
+    let mut file = match File::options().write(true).open(path) {
+        Ok(file) => file,
+        Err(err) => return format!("Error: {:?}", err), // Return error as string
+    };
+
+    let message_bytes: &[u8] = message.as_bytes(); // Get bytes of the message
+
+    let offset_value = thread_rng().gen_range(5..=15); // Generate a random offset value
+
+    let message_length_bytes: u8 = match message.len().try_into() {
+        Ok(length) => length,
+        Err(_) => return format!("Message has to be max 255 bytes long"), // Return error as string
+    };
+
+    if let Err(err) = file.seek(SeekFrom::Start(OFFSET_VALUE_ADDRESS)) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    // Write offset value and message length to the file
+    if let Err(err) = file.write(&[offset_value]) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    if let Err(err) = file.write(&[message_length_bytes]) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    if let Err(err) = file.seek(SeekFrom::Current(-1)) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    for byte in message_bytes {
+        // Iterate over each byte in the message
+        let pointer_location = match file.seek(SeekFrom::Current(offset_value as i64 - 1)) {
+            Ok(location) => location,
+            Err(err) => return format!("Error: {:?}", err), // Return error as string
+        };
+
+        if pointer_location > file_size {
+            return format!("Error: End of line detected"); // Return error as string
+        }
+
+        let shifted_byte: u8 = wrapping_add(*byte, LETTER_SHIFT); // Perform wrapping addition for each byte
+
+        if let Err(err) = file.write(&[shifted_byte]) {
+            return format!("Error: {:?}", err); // Return error as string
+        }
+    }
+
+    "Successfully Encoded Message!".to_string() // Return Ok if encoding is successful
+}
+
+/// Decodes a message from a file
+#[tauri::command]
+fn decode(path: &str) -> String {
+    // Constants
+    const OFFSET_VALUE_ADDRESS: u64 = 0x100;
+    const LETTER_SHIFT: u8 = 128;
+
+    // Read offset value and message length bytes from file
+    let mut offset_value: [u8; 1] = [0];
+    let mut message_length_bytes: [u8; 1] = [0];
+    let mut file = match File::open(&path) {
+        Ok(file) => file,
+        Err(err) => return format!("Error: {:?}", err), // Return error as string
+    };
+
+    // Read offset value and message length bytes
+    if let Err(err) = file.seek(SeekFrom::Start(OFFSET_VALUE_ADDRESS)) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    if let Err(err) = file.read(&mut offset_value) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    if let Err(err) = file.read(&mut message_length_bytes) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    // Reset file pointer to offset value address
+    if let Err(err) = file.seek(SeekFrom::Start(OFFSET_VALUE_ADDRESS)) {
+        return format!("Error: {:?}", err); // Return error as string
+    }
+
+    // Decode message
+    let mut message_bytes: Vec<u8> = Vec::new();
+    for _ in 0..message_length_bytes[0] {
+        if let Err(err) = file.seek(SeekFrom::Current(offset_value[0] as i64)) {
+            return format!("Error: {:?}", err); // Return error as string
+        }
+
+        let mut message_buffer: [u8; 1] = [0];
+        if let Err(err) = file.read(&mut message_buffer) {
+            return format!("Error: {:?}", err); // Return error as string
+        }
+
+        if let Err(err) = file.seek(SeekFrom::Current(-1)) {
+            return format!("Error: {:?}", err); // Return error as string
+        }
+
+        message_bytes.push(wrapping_subtract(message_buffer[0], LETTER_SHIFT)); // Perform wrapping subtraction
+    }
+
+    // Convert message bytes to string
+    let message_string = match String::from_utf8(message_bytes) {
+        Ok(message_string) => message_string,
+        Err(_) => return "Error: Invalid UTF-8 sequence".to_string(), // Return error as string
+    };
+
     message_string
 }
 

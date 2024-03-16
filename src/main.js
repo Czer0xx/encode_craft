@@ -10,7 +10,6 @@ window.addEventListener("DOMContentLoaded", () => {
   const encodeRadio = radios[0];
   const processButton = document.querySelector("#processButton")
   const messageInput = document.querySelector("#messageToEncode")
-  const infoDiv = document.querySelector("#infoDiv")
   const info = document.querySelector("#info")
   let fileName = "";
 
@@ -42,14 +41,7 @@ window.addEventListener("DOMContentLoaded", () => {
         return;
       } 
       invoke("encode", { path: fileName, message: messageInput.value }).then((message) => {
-        let startingPoint = message.split(',')[0];
-        let endingPoint = message.split(',')[1];
-        let messageContent = `Successfully wrote message! <br>
-Starting Position: 0x${startingPoint} <br>
-Ending Position: 0x${endingPoint} <br>
-Content: ${messageInput.value}`
-        
-        info.innerHTML = messageContent
+        info.textContent = message
       })
     } else if (encodeRadio.checked == false){
       if (fileName == "") {
